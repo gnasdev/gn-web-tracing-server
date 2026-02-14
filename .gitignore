@@ -1,2 +1,6 @@
 node_modules/
 data/
+dist/
+public/js/viewer.bundle.js
+public/js/viewer.bundle.js.map
+public/css/viewer.css

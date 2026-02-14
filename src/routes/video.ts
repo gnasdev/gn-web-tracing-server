@@ -1,5 +1,5 @@
-const express = require("express");
-const diskStore = require("../storage/disk-store");
+import express from "express";
+import * as diskStore from "../storage/disk-store";
 
 const router = express.Router();
 
@@ -8,8 +8,7 @@ router.get("/:id/video", (req, res) => {
   if (!videoPath) {
     return res.status(404).json({ ok: false, error: "Video not found" });
   }
-  // res.sendFile handles Range requests automatically
   res.sendFile(videoPath);
 });
 
-module.exports = router;
+export default router;

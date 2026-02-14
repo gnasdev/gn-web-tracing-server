@@ -1,13 +1,13 @@
-const express = require("express");
-const multer = require("multer");
-const diskStore = require("../storage/disk-store");
+import express from "express";
+import multer from "multer";
+import * as diskStore from "../storage/disk-store";
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 500 * 1024 * 1024, // 500MB max video
-    fieldSize: 50 * 1024 * 1024, // 50MB max per text field (console/network JSON)
+    fieldSize: 50 * 1024 * 1024, // 50MB max per text field
   },
 });
 
@@ -24,8 +24,8 @@ router.post("/", upload.single("video"), async (req, res) => {
     const url = `${req.protocol}://${req.get("host")}/view/${id}`;
     res.status(201).json({ ok: true, id, url });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
-module.exports = router;
+export default router;

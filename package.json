@@ -2,14 +2,35 @@
   "name": "ns-tracing-server",
   "version": "1.0.0",
   "description": "Local server for viewing ns-tracing recordings",
-  "main": "server.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "build": "tsc && node esbuild.frontend.mjs && npx tailwindcss -i src/frontend/app.css -o public/css/viewer.css --minify",
+    "build:backend": "tsc",
+    "build:frontend": "node esbuild.frontend.mjs && npx tailwindcss -i src/frontend/app.css -o public/css/viewer.css --minify",
+    "dev": "concurrently \"tsx --watch src/server.ts\" \"node esbuild.frontend.mjs --watch\" \"npx tailwindcss -i src/frontend/app.css -o public/css/viewer.css --watch\"",
+    "dev:frontend": "concurrently \"node esbuild.frontend.mjs --watch\" \"npx tailwindcss -i src/frontend/app.css -o public/css/viewer.css --watch\"",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.frontend.json"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.18",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.24.0",
+    "tailwindcss": "^4.1.18",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
   }
 }

@@ -1,5 +1,5 @@
-const express = require("express");
-const diskStore = require("../storage/disk-store");
+import express from "express";
+import * as diskStore from "../storage/disk-store";
 
 const router = express.Router();
 
@@ -11,4 +11,4 @@ router.get("/:id", (req, res) => {
   res.json({ ok: true, ...data });
 });
 
-module.exports = router;
+export default router;
