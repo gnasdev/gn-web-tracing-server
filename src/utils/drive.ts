@@ -1,4 +1,5 @@
 import fs from "fs";
+import { Readable } from "stream";
 import { google, drive_v3 } from "googleapis";
 import type { Request, Response } from "express";
 
@@ -60,6 +61,59 @@ export async function uploadVideoToDrive(
 
   console.log(`[Drive] Upload complete. Drive File ID: ${res.data.id} for filename: ${filename}`);
   return res.data.id;
+}
+
+export async function uploadLogsToDrive(
+  filename: string,
+  logsString: string
+): Promise<string> {
+  const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const fileMetadata = {
+    name: filename,
+    parents: FOLDER_ID ? [FOLDER_ID] : undefined,
+  };
+
+  const media = {
+    mimeType: "application/json",
+    body: Readable.from(logsString),
+  };
+
+  console.log(`[Drive] Starting logs upload to Drive. Filename: ${filename}`);
+  const res = await getDriveClient().files.create({
+    requestBody: fileMetadata,
+    media: media,
+    fields: "id",
+    supportsAllDrives: true,
+  });
+
+  if (!res.data.id) {
+    throw new Error("Upload failed, no file ID returned from Google Drive.");
+  }
+
+  console.log(`[Drive] Logs upload complete. Drive File ID: ${res.data.id}`);
+  return res.data.id;
+}
+
+export async function fetchLogsFromDrive(fileId: string): Promise<any> {
+  console.log(`[Drive] Fetching logs from Drive. File ID: ${fileId}`);
+  const res = await getDriveClient().files.get({
+    fileId,
+    alt: "media",
+    supportsAllDrives: true,
+  }, { responseType: "stream" });
+  
+  return new Promise((resolve, reject) => {
+    let data = '';
+    res.data.on('data', (chunk: string | Buffer) => { data += chunk; });
+    res.data.on('end', () => {
+      try {
+        resolve(JSON.parse(data));
+      } catch (e) {
+        reject(e);
+      }
+    });
+    res.data.on('error', reject);
+  });
 }
 
 export async function deleteVideoFromDrive(fileId: string): Promise<void> {
