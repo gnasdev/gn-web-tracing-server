@@ -28,4 +28,5 @@
 - **Phụ thuộc**: `googleapis` SDK.
 
 ## 7. Lịch sử cập nhật (Changelog)
+- **2026-03-28**: Bổ sung rào chắn xử lý Native Fetch headers và tối ưu proxy upload giới hạn (Multer limits).
 - **2026-03-27**: Hoàn thiện phiên bản 1.0 (Bao gồm Native Stream, Byte-Range Nginx Header Proxy, Garbage Cleanup).
