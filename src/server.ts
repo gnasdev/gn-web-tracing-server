@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -7,6 +8,11 @@ import videoRouter from "./routes/video";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use((req, res, next) => {
+  console.log(`[Global Logger] ${req.method} ${req.url}`);
+  next();
+});
 
 // CORS - allow chrome-extension:// origins and localhost
 app.use(
@@ -21,6 +27,11 @@ app.use(
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 // API routes
+app.use("/api/recordings", uploadRouter);
+app.use("/api/recordings", recordingsRouter);
+app.use("/api/recordings", videoRouter);
+
+// Support extension uploads directly to /recordings
 app.use("/recordings", uploadRouter);
 app.use("/recordings", recordingsRouter);
 app.use("/recordings", videoRouter);
