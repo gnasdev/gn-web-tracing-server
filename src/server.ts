@@ -5,6 +5,7 @@ import path from "path";
 import uploadRouter from "./routes/upload";
 import recordingsRouter from "./routes/recordings";
 import videoRouter from "./routes/video";
+import authRouter from "./routes/auth";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +28,7 @@ app.use(
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 // API routes
+app.use("/api/auth", authRouter);
 app.use("/api/recordings", uploadRouter);
 app.use("/api/recordings", recordingsRouter);
 app.use("/api/recordings", videoRouter);

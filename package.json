@@ -10,7 +10,8 @@
     "dev": "concurrently \"tsx --watch src/server.ts\" \"node esbuild.frontend.mjs --watch\" \"npx tailwindcss -i src/frontend/app.css -o public/css/viewer.css --watch\"",
     "dev:frontend": "concurrently \"node esbuild.frontend.mjs --watch\" \"npx tailwindcss -i src/frontend/app.css -o public/css/viewer.css --watch\"",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.frontend.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.frontend.json",
+    "get-google-refresh-token": "tsx scripts/get-google-refresh-token.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -1,23 +1,116 @@
 import fs from "fs";
 import { Readable } from "stream";
-import { google, drive_v3 } from "googleapis";
+import { google, drive_v3, OAuth2Client } from "googleapis";
 import type { Request, Response } from "express";
 
-// Ensure you have GOOGLE_APPLICATION_CREDENTIALS environment variable pointing to your service account JSON file
-// or use other standard Google auth mechanisms.
-// Set GOOGLE_DRIVE_FOLDER_ID if you want to upload to a specific folder.
+// Store OAuth2 client and refresh token in memory
+let _oauth2Client: OAuth2Client | null = null;
+let _refreshToken: string | null = null;
 let _driveClient: drive_v3.Drive;
 
+function getOAuth2Client(): OAuth2Client {
+  if (_oauth2Client) return _oauth2Client;
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for OAuth2');
+  }
+
+  _oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'http://localhost');
+  return _oauth2Client;
+}
+
+function initializeOAuth(): void {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  // Skip if using service account
+  if (!clientId || !clientSecret) return;
+
+  const oauth2Client = getOAuth2Client();
+
+  // Check if we have a stored refresh token
+  if (_refreshToken) {
+    oauth2Client.setCredentials({
+      refresh_token: _refreshToken,
+    });
+  }
+}
+
+export function setRefreshToken(token: string): void {
+  _refreshToken = token;
+  const oauth2Client = getOAuth2Client();
+  oauth2Client.setCredentials({
+    refresh_token: token,
+  });
+}
+
+export function getRefreshToken(): string | null {
+  return _refreshToken;
+}
+
 function getDriveClient(): drive_v3.Drive {
+  // If already initialized, return cached client
   if (_driveClient) return _driveClient;
 
   let auth: any;
-  if (process.env.GOOGLE_REFRESH_TOKEN) {
-    auth = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
-    auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+
+  // Check for OAuth2 credentials first
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (clientId && clientSecret) {
+    const oauth2Client = getOAuth2Client();
+
+    // Set credentials if we have a refresh token in memory
+    if (_refreshToken) {
+      oauth2Client.setCredentials({
+        refresh_token: _refreshToken,
+      });
+    }
+
+    auth = oauth2Client;
+  } else {
+    // Use service account or default credentials
+    auth = new google.auth.GoogleAuth({
+      scopes: [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com.auth/drive.readonly",
+      ],
+    });
+  }
+
+  _driveClient = google.drive({ version: "v3", auth });
+
+  // Add token refresh interceptor
+  _driveClient = google.drive({
+    version: "v3",
+    auth: {
+      ...auth,
+      // Override getAccessToken to handle token refresh
+    }
+  } as any);
+
+  return _driveClient;
+}
+
+// Create a fresh Drive client (useful after token refresh)
+function createDriveClient(): drive_v3.Drive {
+  let auth: any;
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (clientId && clientSecret) {
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'http://localhost');
+    if (_refreshToken) {
+      oauth2Client.setCredentials({
+        refresh_token: _refreshToken,
+      });
+    }
+    auth = oauth2Client;
   } else {
     auth = new google.auth.GoogleAuth({
       scopes: [
@@ -27,8 +120,22 @@ function getDriveClient(): drive_v3.Drive {
     });
   }
 
-  _driveClient = google.drive({ version: "v3", auth });
-  return _driveClient;
+  return google.drive({ version: "v3", auth });
+}
+
+// Wrapper to handle auth errors and retry
+async function withAuthRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    // Check if it's a 401 (unauthorized) - token might be invalid/expired
+    if (error.response?.status === 401 || error.message?.includes('invalid_grant')) {
+      console.log('[Drive] Token expired or invalid. Please re-authenticate.');
+      console.log('[Drive] Run: npm run get-google-refresh-token');
+      throw new Error('Google refresh token expired. Please re-authenticate with: npm run get-google-refresh-token');
+    }
+    throw error;
+  }
 }
 
 export async function uploadVideoToDrive(
@@ -47,12 +154,14 @@ export async function uploadVideoToDrive(
   };
 
   console.log(`[Drive] Starting video upload to Drive. Filename: ${filename}, Local Path: ${localVideoFilePath}`);
-  const res = await getDriveClient().files.create({
+
+  const client = createDriveClient();
+  const res = await withAuthRetry(() => client.files.create({
     requestBody: fileMetadata,
     media: media,
     fields: "id",
     supportsAllDrives: true,
-  });
+  }));
 
   if (!res.data.id) {
     console.error(`[Drive] Upload failed for filename: ${filename}, no file ID returned.`);
@@ -79,12 +188,14 @@ export async function uploadLogsToDrive(
   };
 
   console.log(`[Drive] Starting logs upload to Drive. Filename: ${filename}`);
-  const res = await getDriveClient().files.create({
+
+  const client = createDriveClient();
+  const res = await withAuthRetry(() => client.files.create({
     requestBody: fileMetadata,
     media: media,
     fields: "id",
     supportsAllDrives: true,
-  });
+  }));
 
   if (!res.data.id) {
     throw new Error("Upload failed, no file ID returned from Google Drive.");
@@ -96,12 +207,14 @@ export async function uploadLogsToDrive(
 
 export async function fetchLogsFromDrive(fileId: string): Promise<any> {
   console.log(`[Drive] Fetching logs from Drive. File ID: ${fileId}`);
-  const res = await getDriveClient().files.get({
+
+  const client = createDriveClient();
+  const res = await withAuthRetry(() => client.files.get({
     fileId,
     alt: "media",
     supportsAllDrives: true,
-  }, { responseType: "stream" });
-  
+  }, { responseType: "stream" }));
+
   return new Promise((resolve, reject) => {
     let data = '';
     res.data.on('data', (chunk: string | Buffer) => { data += chunk; });
@@ -118,11 +231,13 @@ export async function fetchLogsFromDrive(fileId: string): Promise<any> {
 
 export async function deleteVideoFromDrive(fileId: string): Promise<void> {
   console.log(`[Drive] Deleting video from Drive. File ID: ${fileId}`);
+
+  const client = createDriveClient();
   try {
-    await getDriveClient().files.delete({
+    await withAuthRetry(() => client.files.delete({
       fileId,
       supportsAllDrives: true,
-    });
+    }));
     console.log(`[Drive] Successfully deleted video from Drive. File ID: ${fileId}`);
   } catch (error) {
     console.error(`[Drive] Failed to delete video from Drive. File ID: ${fileId}`, error);
@@ -136,29 +251,30 @@ export async function handleDriveVideoProxy(
   res: Response
 ): Promise<void> {
   try {
+    const client = createDriveClient();
+
     const options: any = {
       responseType: "stream",
       headers: {
-        "Accept-Encoding": "identity" // Disable gaxios native decompression to preserve exact Content-Length
+        "Accept-Encoding": "identity"
       }
     };
-    
+
     if (req.headers.range) {
       options.headers.Range = req.headers.range;
     }
 
     console.log(`[Drive Proxy] Requesting file from Drive. File ID: ${fileId}, Range: ${req.headers.range || 'None'}`);
 
-    const driveRes = await getDriveClient().files.get({
+    const driveRes = await withAuthRetry(() => client.files.get({
       fileId,
       alt: "media",
       supportsAllDrives: true,
-    }, options);
-    
+    }, options));
+
     console.log(`[Drive Proxy] Got response from Drive. Status: ${driveRes.status}`);
     console.log(`[Drive Proxy] Drive Headers:`, JSON.stringify(driveRes.headers));
 
-    // If the browser aborted connection while Google API was resolving
     if (res.destroyed || req.destroyed) {
       if (driveRes.data && !driveRes.data.destroyed) {
         driveRes.data.destroy();
@@ -167,11 +283,10 @@ export async function handleDriveVideoProxy(
     }
 
     res.status(driveRes.status);
-    
-    // Explicitly enforce MIME type to guarantee Safari/Chrome HTML5 <video> decoder acceptance
+
     res.setHeader('Content-Type', 'video/webm');
-    res.setHeader('Accept-Ranges', 'bytes'); // Guarantee seeking compatibility
-    
+    res.setHeader('Accept-Ranges', 'bytes');
+
     const getHeader = (key: string) => {
       const hdrs = driveRes.headers as any;
       if (typeof hdrs.get === 'function') {
@@ -182,7 +297,7 @@ export async function handleDriveVideoProxy(
 
     const contentLength = getHeader('content-length');
     if (contentLength) res.setHeader('Content-Length', contentLength);
-    
+
     const contentRange = getHeader('content-range');
     if (contentRange) res.setHeader('Content-Range', contentRange);
 
@@ -217,3 +332,6 @@ export async function handleDriveVideoProxy(
     }
   }
 }
+
+// Initialize OAuth on module load
+initializeOAuth();
